@@ -122,7 +122,7 @@ constexpr float kRoadClassFactor[] = {
     0.05f, // Tertiary
     0.05f, // Unclassified
     0.0f,  // Residential
-    0.5f   // Service, other
+    0.0f   // Service, other
 };
 
 // Speed adjustment factors based on weighted grade. Comments here show an
@@ -377,7 +377,8 @@ public:
   // Hidden in source file so we don't need it to be protected
   // We expose it within the source file for testing purposes
 
-  std::vector<float> speedfactor_; // Cost factors based on speed in kph
+  // Cost factors based on speed in kph. Higher means less likely to use
+  std::vector<float> speedfactor_;
   float use_roads_;                // Preference of using roads between 0 and 1
   float avoid_roads_;              // Inverse of use roads
   float road_factor_;              // Road factor based on use_roads_
@@ -512,14 +513,17 @@ BicycleCost::BicycleCost(const Costing& costing)
     speedfactor_[s] = (kSecPerHour * 0.001f) / static_cast<float>(s);
 
     float base_pen = 0.0f;
-    if (s <= 40) {
-      base_pen = (static_cast<float>(s) / 40.0f);
-    } else if (s <= 65) {
-      base_pen = ((static_cast<float>(s) / 25.0f) - 0.6f);
+    const float floatSpeed = static_cast<float>(s);
+    if (s <= 30) {
+      base_pen = (floatSpeed / 60.0f); // between 0 and 0.5
+    } else if (s <= 40) {
+      base_pen = 0.5f;
+    } else if (s <= 50) {
+      base_pen = 3f;
     } else {
-      base_pen = ((static_cast<float>(s) / 50.0) + 0.7f);
+      base_pen = 5f + ((floatSpeed - 50)  / 10.0f;
     }
-    speedpenalty_[s] = (base_pen - 1.0f) * avoid_roads + 1.0f;
+    speedpenalty_[s] = base_pen * avoid_roads;
   }
 
   // Populate the grade penalties (based on use_hills factor - value between 0 and 1)
@@ -615,7 +619,8 @@ Cost BicycleCost::EdgeCost(const baldr::DirectedEdge* edge,
     return {shortest_ ? edge->length() : sec * ferry_factor_, sec};
   }
 
-  // Represents how stressful a roadway is without looking at grade or cycle accommodations
+  // Represents how stressful a roadway is without looking at grade or cycle accommodations. Larger
+  // means less likely to use.
   float roadway_stress = 1.0f;
 
   // Represents the amount of accommodation that is being made for bicycling
@@ -630,6 +635,7 @@ Cost BicycleCost::EdgeCost(const baldr::DirectedEdge* edge,
     // these paths can be a little stressful to ride. No traffic though so still favorable
     accommodation_factor = 0.3f + use_roads_;
   } else if (edge->use() == Use::kLivingStreet) {
+    // Not the living street variable - this is a contant
     roadway_stress = livingstreet_factor_;
   } else if (edge->use() == Use::kTrack) {
     roadway_stress = track_factor_;
@@ -669,7 +675,7 @@ Cost BicycleCost::EdgeCost(const baldr::DirectedEdge* edge,
   }
 
   // Create an edge factor based on total stress (sum of accommodation factor and roadway
-  // stress) and the weighted grade penalty for the edge.
+  // stress) and the weighted grade penalty for the edge. Larger means less likely to use.
   float factor =
       1.0f + grade_penalty[edge->weighted_grade()] + (accommodation_factor * roadway_stress);
 
